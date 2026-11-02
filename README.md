@@ -15,21 +15,33 @@ It gives you:
 
 Presentation stays in the application. `ai` never draws a TUI.
 
-> Status: experimental. The API is usable but not frozen before `v1.0.0`.
+> Status: `v0.1.0`, experimental. The API is usable but not frozen before `v1.0.0`.
 
 ## Install
 
 Library:
 
 ```bash
-go get github.com/sovengar/ai
+go get github.com/sovengar/ai@v0.1.0
 ```
 
 CLI:
 
 ```bash
-go install github.com/sovengar/ai/cmd/ai@latest
+go install github.com/sovengar/ai/cmd/ai@v0.1.0
 ```
+
+## Versioning
+
+Releases use semantic tags. `v0.1.0` is the first published tag; the API may change before `v1.0.0`.
+
+Pin production consumers:
+
+```bash
+go get github.com/sovengar/ai@v0.1.0
+```
+
+Use `@latest` only for experiments.
 
 ## Quick start
 
