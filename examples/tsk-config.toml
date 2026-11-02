@@ -1,0 +1,13 @@
+# Example: tsk consumes ai + mux from one handoff command.
+# Put this in ~/.config/tsk/config.toml and make sure `ai` and `mux` are on PATH.
+#
+# tsk expands the shell template. `ai exec` turns the shared request into the
+# agent-specific argv; mux only decides where the process appears.
+# Placeholders: {{working_dir}}, {{container}}, {{harness}}, {{model}},
+# {{effort}}, {{session_id}}, {{prompt_file}}.
+[handoff]
+command = "mux --container {{container}} --layout tab --working-dir {{working_dir}} --session-id {{session_id}} -- ai exec --harness {{harness}} --model {{model}} --effort {{effort}} --prompt-file {{prompt_file}}"
+working_dir = ""
+prompt = ""
+model = ""
+thinking = ""

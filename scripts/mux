@@ -1,0 +1,400 @@
+#!/bin/sh
+# mux presents one command in the terminal multiplexer around us.
+# It resolves a backend (herdr, tuios, kitty, wezterm, tmux) and a layout
+# (pane, tab, popup/overlay), then runs the command.
+# It is not AI-specific: any command can be presented this way.
+set -eu
+
+usage() {
+	cat <<'EOF'
+mux - present a command in tmux, herdr, tuios, kitty or wezterm
+
+Usage:
+  mux [options] -- COMMAND [ARG...]
+
+Options:
+  --backend auto|tmux|herdr|tuios|kitty|wezterm|none
+                        backend (default: auto)
+  --layout auto|pane|tab|popup|overlay
+                        presentation (default: auto -> pane)
+  --direction right|down
+                        pane split direction (default: right)
+  --working-dir DIR     working directory (default: $PWD)
+  --container NAME      workspace (herdr) or session (tmux/tuios) to open in;
+                        reuses it when it exists, otherwise creates it
+  --label NAME          tab/pane/popup label (default: mux, or session-id)
+  --session-id ID       full label for tab/popup when --label is absent
+  --width SIZE          popup width (default: 80%)
+  --height SIZE         popup height (default: 80%)
+  --no-focus            do not focus the new pane/tab (where supported)
+  --dry-run             print the resolved plan and exit
+  -h, --help            show this help
+
+Backends:
+  auto: HERDR_ENV=1 -> herdr, TUIOS_ENV=1 -> tuios,
+        KITTY_LISTEN_ON -> kitty, WEZTERM_PANE -> wezterm,
+        TMUX -> tmux, else none.
+  none: exec the command in the current terminal.
+
+Notes:
+  --container is a container, not a layout: herdr calls it a workspace,
+  tmux and tuios call it a session, and popup ignores it.
+  herdr popup is config-file-only; --layout popup uses split + zoom.
+  wezterm has no floating popup; --layout popup degrades to a pane.
+  kitty overlays need remote control enabled.
+  tmux popups need tmux >= 3.2.
+EOF
+}
+
+die() {
+	printf 'mux: %s\n' "$*" >&2
+	exit 2
+}
+
+quote() {
+	_q=$1
+	_q=$(printf '%s' "$_q" | sed "s/'/'\\\\''/g")
+	printf "'%s'" "$_q"
+}
+
+shell_join() {
+	_join=
+	for _arg in "$@"; do
+		_q=$(quote "$_arg")
+		if [ -z "$_join" ]; then
+			_join=$_q
+		else
+			_join="$_join $_q"
+		fi
+	done
+	printf '%s' "$_join"
+}
+
+resolve_backend() {
+	case $backend in
+	tmux | herdr | tuios | kitty | wezterm | none) return 0 ;;
+	auto)
+		if [ "${HERDR_ENV:-}" = 1 ] && command -v herdr >/dev/null 2>&1; then
+			backend=herdr
+		elif [ "${TUIOS_ENV:-}" = 1 ] && command -v tuios >/dev/null 2>&1; then
+			backend=tuios
+		elif [ -n "${KITTY_LISTEN_ON:-}" ] && command -v kitty >/dev/null 2>&1; then
+			backend=kitty
+		elif [ -n "${WEZTERM_PANE:-}" ] && command -v wezterm >/dev/null 2>&1; then
+			backend=wezterm
+		elif [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+			backend=tmux
+		else
+			backend=none
+		fi
+		;;
+	*) die "unknown backend: $backend" ;;
+	esac
+}
+
+herdr_pane_id() {
+	sed -n 's/.*"pane_id":"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+tuios_pane_id() {
+	sed -n 's/.*"window_id":"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+herdr_workspace_id_by_label() {
+	herdr workspace list 2>/dev/null |
+		jq -r --arg name "$1" '.result.workspaces[] | select(.label == $name) | .workspace_id' |
+		head -n 1
+}
+
+herdr_ensure_workspace() {
+	command -v jq >/dev/null 2>&1 ||
+		die "the herdr backend needs jq to resolve --container"
+	_ws=$(herdr_workspace_id_by_label "$1")
+	if [ -z "$_ws" ]; then
+		_out=$(herdr workspace create --label "$1" --cwd "$cwd" --no-focus)
+		_ws=$(printf '%s' "$_out" | jq -r '.result.workspace.workspace_id // empty')
+		[ -n "$_ws" ] || die "could not create herdr workspace: $1"
+	fi
+	printf '%s' "$_ws"
+}
+
+herdr_workspace_pane() {
+	herdr pane list 2>/dev/null |
+		jq -r --arg ws "$1" '.result.panes[] | select(.workspace_id == $ws) | .pane_id' |
+		head -n 1
+}
+
+run_tmux() {
+	_tsess=
+	if [ -n "$container" ]; then
+		_tsess=$container
+		if ! tmux has-session -t "=$_tsess" 2>/dev/null; then
+			tmux new-session -d -s "$_tsess" -c "$cwd"
+		fi
+		if [ "$focus" = 1 ]; then
+			tmux switch-client -t "$_tsess" 2>/dev/null || true
+		fi
+	fi
+	case $layout in
+	pane)
+		_axis=-h
+		[ "$direction" = down ] && _axis=-v
+		_focus=
+		[ "$focus" = 0 ] && _focus=-d
+		if [ -n "$_tsess" ]; then
+			tmux split-window "$_axis" $_focus -t "$_tsess" -c "$cwd" "$cmd"
+		else
+			tmux split-window "$_axis" $_focus -c "$cwd" "$cmd"
+		fi
+		;;
+	tab)
+		_focus=
+		[ "$focus" = 0 ] && _focus=-d
+		if [ -n "$_tsess" ]; then
+			tmux new-window $_focus -t "$_tsess" -c "$cwd" -n "$label" "$cmd"
+		else
+			tmux new-window $_focus -c "$cwd" -n "$label" "$cmd"
+		fi
+		;;
+	popup)
+		tmux display-popup -E -d "$cwd" -T "$label" -w "$width" -h "$height" "$cmd"
+		;;
+	esac
+}
+
+run_herdr() {
+	_ws=
+	if [ -n "$container" ] && [ "$layout" != popup ]; then
+		_ws=$(herdr_ensure_workspace "$container")
+		if [ "$focus" = 1 ]; then
+			herdr workspace focus "$_ws" >/dev/null 2>&1 || true
+		fi
+	fi
+	case $layout in
+	pane)
+		_focus=--focus
+		[ "$focus" = 0 ] && _focus=--no-focus
+		if [ -n "$_ws" ]; then
+			_target=$(herdr_workspace_pane "$_ws")
+			[ -n "$_target" ] || die "no pane in herdr workspace: $container"
+			_out=$(herdr pane split --pane "$_target" --direction "$direction" --cwd "$cwd" "$_focus")
+		else
+			_out=$(herdr pane split --current --direction "$direction" --cwd "$cwd" "$_focus")
+		fi
+		_pane=$(printf '%s' "$_out" | herdr_pane_id)
+		[ -n "$_pane" ] || die "could not resolve the herdr pane id"
+		herdr pane run "$_pane" "$cmd"
+		;;
+	tab)
+		_focus=--focus
+		[ "$focus" = 0 ] && _focus=--no-focus
+		if [ -n "$_ws" ]; then
+			_out=$(herdr tab create --workspace "$_ws" --cwd "$cwd" --label "$label" "$_focus")
+		else
+			_out=$(herdr tab create --cwd "$cwd" --label "$label" "$_focus")
+		fi
+		_pane=$(printf '%s' "$_out" | herdr_pane_id)
+		[ -n "$_pane" ] || die "could not resolve the herdr pane id"
+		herdr pane run "$_pane" "$cmd"
+		;;
+	popup)
+		# herdr has no CLI popup; a zoomed split is the CLI overlay.
+		printf 'mux: herdr popup is config-only; using a zoomed split\n' >&2
+		_focus=--focus
+		[ "$focus" = 0 ] && _focus=--no-focus
+		_out=$(herdr pane split --current --direction "$direction" --cwd "$cwd" "$_focus")
+		_pane=$(printf '%s' "$_out" | herdr_pane_id)
+		[ -n "$_pane" ] || die "could not resolve the herdr pane id"
+		herdr pane zoom "$_pane" --on
+		herdr pane run "$_pane" "$cmd"
+		;;
+	esac
+}
+
+run_tuios() {
+	_sess=${container:-${TUIOS_SESSION:-}}
+	case $layout in
+	pane)
+		_axis=vertical
+		[ "$direction" = down ] && _axis=horizontal
+		if [ -n "$_sess" ]; then
+			_out=$(tuios split-window "$_axis" -s "$_sess" --json)
+		else
+			_out=$(tuios split-window "$_axis" --json)
+		fi
+		_pane=$(printf '%s' "$_out" | tuios_pane_id)
+		[ -n "$_pane" ] || die "could not resolve the tuios pane id"
+		if [ -n "$_sess" ]; then
+			tuios send-text -s "$_sess" -w "$_pane" "$cmd
+"
+		else
+			tuios send-text -w "$_pane" "$cmd
+"
+		fi
+		;;
+	tab)
+		if [ -n "$_sess" ]; then
+			tuios new-window "$label" -s "$_sess" --cwd "$cwd" --keep-open -- sh -c "$cmd"
+		else
+			tuios new-window "$label" --cwd "$cwd" --keep-open -- sh -c "$cmd"
+		fi
+		;;
+	popup)
+		if [ -n "$_sess" ]; then
+			tuios popup -s "$_sess" --cwd "$cwd" --name "$label" --width "$width" --height "$height" -- sh -c "$cmd"
+		else
+			tuios popup --cwd "$cwd" --name "$label" --width "$width" --height "$height" -- sh -c "$cmd"
+		fi
+		;;
+	esac
+}
+
+run_kitty() {
+	_focus=
+	[ "$focus" = 0 ] && _focus=--keep-focus
+	case $layout in
+	pane)
+		_loc=vsplit
+		[ "$direction" = down ] && _loc=hsplit
+		kitty @ launch --type=window --location="$_loc" --cwd "$cwd" --title "$label" $_focus -- "$@"
+		;;
+	tab)
+		kitty @ launch --type=tab --tab-title "$label" --cwd "$cwd" $_focus -- "$@"
+		;;
+	popup)
+		kitty @ launch --type=overlay --title "$label" --cwd "$cwd" $_focus -- "$@"
+		;;
+	esac
+}
+
+run_wezterm() {
+	case $layout in
+	pane)
+		_axis=--right
+		[ "$direction" = down ] && _axis=--bottom
+		wezterm cli split-pane "$_axis" --cwd "$cwd" -- "$@"
+		;;
+	tab)
+		wezterm cli spawn --cwd "$cwd" -- "$@"
+		;;
+	esac
+}
+
+backend=auto
+layout=auto
+direction=right
+cwd=
+container=
+label=mux
+label_set=0
+session_id=
+width=80%
+height=80%
+focus=1
+dry_run=0
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	--backend)
+		backend=$2
+		shift 2
+		;;
+	--layout)
+		layout=$2
+		shift 2
+		;;
+	--direction)
+		direction=$2
+		shift 2
+		;;
+	--working-dir)
+		cwd=$2
+		shift 2
+		;;
+	--container)
+		container=$2
+		shift 2
+		;;
+	--label)
+		label=$2
+		label_set=1
+		shift 2
+		;;
+	--session-id)
+		session_id=$2
+		shift 2
+		;;
+	--width)
+		width=$2
+		shift 2
+		;;
+	--height)
+		height=$2
+		shift 2
+		;;
+	--no-focus)
+		focus=0
+		shift
+		;;
+	--dry-run)
+		dry_run=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--)
+		shift
+		break
+		;;
+	*)
+		die "unknown option: $1"
+		;;
+	esac
+done
+
+[ $# -gt 0 ] || die "no command given"
+
+case $container in
+*'{{'*) die "unresolved placeholder in --container: $container" ;;
+esac
+
+cwd=${cwd:-$PWD}
+[ "$direction" = right ] || [ "$direction" = down ] || die "unknown direction: $direction"
+[ "$layout" = auto ] && layout=pane
+[ "$layout" = overlay ] && layout=popup
+case $layout in
+pane | tab | popup) ;;
+*) die "unknown layout: $layout" ;;
+esac
+
+if [ -n "$session_id" ] && [ "$label_set" = 0 ]; then
+	label=$session_id
+fi
+
+resolve_backend
+if [ "$backend" = wezterm ] && [ "$layout" = popup ]; then
+	printf 'mux: wezterm has no floating popup; using a pane\n' >&2
+	layout=pane
+fi
+if [ -n "$container" ] && { [ "$backend" = kitty ] || [ "$backend" = wezterm ] || [ "$backend" = none ]; }; then
+	printf 'mux: %s has no workspace/session container; ignoring --container\n' "$backend" >&2
+fi
+
+cmd=$(shell_join "$@")
+
+if [ "$dry_run" = 1 ]; then
+	printf 'backend=%s\nlayout=%s\ndirection=%s\ncwd=%s\ncontainer=%s\nlabel=%s\ncommand=%s\n' \
+		"$backend" "$layout" "$direction" "$cwd" "$container" "$label" "$cmd"
+	exit 0
+fi
+
+case $backend in
+tmux) run_tmux ;;
+herdr) run_herdr ;;
+tuios) run_tuios ;;
+kitty) run_kitty "$@" ;;
+wezterm) run_wezterm "$@" ;;
+none) exec "$@" ;;
+esac
