@@ -20,6 +20,7 @@ Options:
   --direction right|down
                         pane split direction (default: right)
   --working-dir DIR     working directory (default: $PWD)
+  --cwd DIR             alias for --working-dir
   --container NAME      workspace (herdr) or session (tmux/tuios) to open in;
                         reuses it when it exists, otherwise creates it
   --label NAME          tab/pane/popup label (default: mux, or session-id)
@@ -307,7 +308,7 @@ while [ $# -gt 0 ]; do
 		direction=$2
 		shift 2
 		;;
-	--working-dir)
+	--working-dir | --cwd)
 		cwd=$2
 		shift 2
 		;;

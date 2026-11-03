@@ -287,9 +287,16 @@ agentbridge exec --harness <agent> [--model M] [--effort E] [--binary BIN]
 go test ./...
 go vet ./...
 ./scripts/mux_test.sh
+sh ./scripts/mux_sync.sh
 ```
 
 The `mux` test uses fake backends; it never touches a real multiplexer.
+
+`mux` exists twice on purpose: chezmoi owns
+`home/dot_local/bin/executable_mux` (which installs `~/.local/bin/mux`) and this
+repo keeps the copy the tests run against. `mux_sync.sh` fails when the two
+diverge, so `scripts/mux` and the binary on `PATH` are never two different
+programs.
 
 ## Limitations
 
