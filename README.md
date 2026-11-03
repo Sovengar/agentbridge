@@ -234,4 +234,4 @@ The `mux` test uses fake backends; it never touches a real multiplexer.
 
 ## License
 
-No license has been added yet.
+MIT. See [LICENSE](LICENSE).
