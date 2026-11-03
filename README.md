@@ -222,23 +222,52 @@ Backend detection:
 
 `--container` is a workspace (herdr) or session (tmux/tuios), not a path. `--working-dir` is the real process directory. Popup layouts ignore the container.
 
-## Handoff config
+## Handoff contract
 
-A consumer can keep one command for every agent. The agent-specific argv is built by `agentbridge exec`.
+A consumer keeps **one** command for every agent. The agent-specific argv is
+built by `agentbridge exec`; the presenter only decides where the process
+appears. Adding an agent must not touch the consumer's config.
+
+The contract is these five inputs and no others:
+
+| Input | Meaning |
+|---|---|
+| `--harness` | display name from `agentbridge agents` |
+| `--model` | model id from `agentbridge models <harness>`; empty omits the flag |
+| `--effort` | effort level; empty, or unsupported by the agent, omits the flag |
+| `--prompt-file` | private file with the exact prompt bytes; `--prompt` exists for tests |
+| `--cwd` | working directory of the process |
+
+Duties of `agentbridge exec`: resolve capabilities, omit empty or unsupported
+flags, never invent one, keep the prompt as a single argv element (or a file),
+and `exec` so the TTY, signals and exit code survive. It knows nothing about
+panes, tabs or overlays.
+
+The consumer expands its own placeholders into this one command:
 
 ```toml
 [handoff]
 command = "mux --container {{container}} --layout tab --working-dir {{working_dir}} --session-id {{session_id}} -- agentbridge exec --harness {{harness}} --model {{model}} --effort {{effort}} --prompt-file {{prompt_file}}"
 ```
 
-Example for [tsk](https://github.com/Sovengar/tsk):
+A complete consumer example lives in [`examples/tsk-config.toml`](examples/tsk-config.toml).
 
-- `{{working_dir}}` → task project directory, then configured directory, then `~/Tasks`;
-- `{{container}}` → working directory basename, so one workspace per repo;
-- `{{session_id}}` → stable `tsk-<project>-<task>` label;
-- `{{prompt_file}}` → private prompt file.
+### A real Herdr popup is configuration, not a plugin
 
-A complete example lives in [`examples/tsk-config.toml`](examples/tsk-config.toml).
+Herdr's `popup` layout is expressed in the user's own `config.toml` under
+`[[keys.command]]` with `type = "popup"`. `mux` and `agentbridge` add no plugin
+and no integration module: they only build the command the keybinding runs.
+
+```toml
+[[keys.command]]
+key = "alt+a"
+type = "popup"
+command = "mux --layout popup --working-dir %d -- agentbridge exec --harness pi --prompt-file %f"
+description = "Ask AI about this project"
+```
+
+A backend that has no native popup degrades to a pane: `mux` prints the layout
+it really used, so the degradation is visible instead of silent.
 
 ## CLI reference
 
