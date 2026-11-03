@@ -39,6 +39,12 @@ type Capabilities struct {
 	EffortFlag []string
 	PromptFlag []string
 	Headless   []string
+	// Interactive is the argv prefix for an interactive start (hermes: chat).
+	Interactive []string
+	// NoInteractivePrompt marks an agent whose interactive UI cannot take an
+	// initial prompt (jcode, hermes chat). The prompt is then dropped and the
+	// caller must show it to the user or use the headless mode instead.
+	NoInteractivePrompt bool
 	// EffortJoin, when non-empty, appends the effort to the model value
 	// (for agents that encode both in one flag, e.g. opencode provider/model#variant).
 	EffortJoin string

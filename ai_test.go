@@ -183,8 +183,21 @@ func TestInteractiveArgs(t *testing.T) {
 }
 
 func TestInteractiveArgsOmitsUnsupportedEffort(t *testing.T) {
+	// jcode's interactive TUI takes no initial prompt; the prompt is dropped.
 	got := InteractiveArgs(Request{Agent: Agent{Name: "jcode"}, Model: "m", Effort: "high", Prompt: "p"})
-	want := []string{"jcode", "-m", "m", "p"}
+	want := []string{"jcode", "-m", "m"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("InteractiveArgs = %v, want %v", got, want)
+	}
+}
+
+func TestInteractiveArgsHermesStartsChat(t *testing.T) {
+	// hermes has no top-level positional prompt: the interactive start is
+	// `hermes chat`, and chat itself takes no initial prompt.
+	got := InteractiveArgs(Request{
+		Agent: Agent{Name: "hermes"}, Model: "openai/gpt", Effort: "high", Prompt: "fix it",
+	})
+	want := []string{"hermes", "chat", "-m", "openai/gpt", "--reasoning", "high"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("InteractiveArgs = %v, want %v", got, want)
 	}

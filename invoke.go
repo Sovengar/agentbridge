@@ -33,14 +33,17 @@ func CapabilitiesFor(name string) Capabilities {
 		}
 	case "hermes":
 		return Capabilities{
-			ModelFlag:  []string{"-m", "{value}"},
-			EffortFlag: []string{"--reasoning", "{value}"},
-			Headless:   []string{"chat", "-q"},
+			ModelFlag:           []string{"-m", "{value}"},
+			EffortFlag:          []string{"--reasoning", "{value}"},
+			Headless:            []string{"chat", "-q"},
+			Interactive:         []string{"chat"},
+			NoInteractivePrompt: true,
 		}
 	case "jcode":
 		return Capabilities{
-			ModelFlag: []string{"-m", "{value}"},
-			Headless:  []string{"run"},
+			ModelFlag:           []string{"-m", "{value}"},
+			Headless:            []string{"run"},
+			NoInteractivePrompt: true,
 		}
 	default:
 		return Capabilities{}
@@ -60,15 +63,18 @@ func ModelArgs(agent Agent, model, effort string) string {
 
 // InteractiveArgs returns the raw argv that starts an agent interactively with
 // the prompt already loaded. The prompt placement is agent-specific: positional
-// for pi/codex, --prompt for opencode, and positional for unknown agents.
+// for pi/codex, --prompt for opencode, and positional for unknown agents. An
+// agent whose interactive UI cannot take an initial prompt (jcode, hermes chat)
+// gets no prompt argument.
 func InteractiveArgs(r Request) []string {
 	caps := CapabilitiesFor(r.Agent.Name)
 	binary := r.Agent.Binary
 	if binary == "" {
 		binary = r.Agent.Name
 	}
-	argv := make([]string, 0, 1+len(caps.ModelFlag)+len(caps.EffortFlag)+len(caps.PromptFlag)+1)
+	argv := make([]string, 0, 1+len(caps.Interactive)+len(caps.ModelFlag)+len(caps.EffortFlag)+len(caps.PromptFlag)+1)
 	argv = append(argv, binary)
+	argv = append(argv, caps.Interactive...)
 	// opencode's interactive TUI has no --model/--variant flags; model choice
 	// happens inside the TUI with /model. Headless `opencode run` does accept
 	// --model provider/model#variant.
@@ -77,9 +83,11 @@ func InteractiveArgs(r Request) []string {
 		argv = append(argv, flags(caps.ModelFlag, model)...)
 		argv = append(argv, flags(caps.EffortFlag, effort)...)
 	}
-	if len(caps.PromptFlag) > 0 {
+	switch {
+	case caps.NoInteractivePrompt:
+	case len(caps.PromptFlag) > 0:
 		argv = append(argv, flags(caps.PromptFlag, r.Prompt)...)
-	} else {
+	default:
 		argv = append(argv, r.Prompt)
 	}
 	return argv

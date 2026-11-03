@@ -101,8 +101,8 @@ The caller owns presentation:
 | `pi` | `--model` | `--thinking` | `pi -p` | Prompt is positional |
 | `codex` | `--model` | `-c model_reasoning_effort=…` | `codex exec` | Prompt is positional |
 | `opencode` | `--model` (headless only) | `#variant` on model | `opencode run` | Interactive TUI has no model/effort flags; use `/model` |
-| `hermes` | `-m` | `--reasoning` | `hermes chat -q` | |
-| `jcode` | `-m` | unsupported | `jcode run` | |
+| `hermes` | `-m` | `--reasoning` | `hermes chat -q` | Interactive start is `hermes chat` (no initial prompt); one-shot prompts use `-z` |
+| `jcode` | `-m` | unsupported | `jcode run` | Interactive TUI takes no initial prompt; model switches with `/model` |
 | unknown | none | none | none | Falls back to positional prompt |
 
 Unsupported flags are omitted. The module never invents an option.
@@ -264,7 +264,7 @@ The `mux` test uses fake backends; it never touches a real multiplexer.
 
 ## Limitations
 
-- Interactive prompt placement is agent-specific; `opencode` has no model/effort flags in its TUI.
+- Interactive prompt placement is agent-specific: `opencode`, `hermes` and `jcode` take no model/effort flags in the TUI or no initial prompt at all, so a handoff to them starts a bare interactive session and the prompt is lost. Use the headless mode (`opencode run`, `hermes chat -q`, `jcode run`) to deliver a prompt.
 - Anthropic Messages API is not implemented.
 - Model catalogs are local, undocumented files; a changed format returns an empty list.
 - `mux` is POSIX `sh`; Windows is out of scope.
