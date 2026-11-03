@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -40,7 +41,7 @@ func usage() {
 
 Usage:
   ai agents
-  ai models <agent>
+  ai models <agent> [--endpoint URL [--api-key K] [--prefix P]]
   ai argv --agent <agent> [--model M] [--effort E] [--cwd DIR] [--] <prompt>
   ai exec --harness <agent> [--model M] [--effort E] [--binary BIN]
           [--cwd DIR] (--prompt-file FILE | --prompt TEXT) [--dry-run]
@@ -60,11 +61,26 @@ func cmdAgents() {
 }
 
 func cmdModels(args []string) {
-	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: ai models <agent>")
+	fs := flag.NewFlagSet("models", flag.ExitOnError)
+	endpoint := fs.String("endpoint", "", "OpenAI-compatible base URL; lists /models instead of the local catalog")
+	apiKey := fs.String("api-key", "", "bearer token for --endpoint")
+	prefix := fs.String("prefix", "", "prepended to every model listed by --endpoint")
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: ai models <agent> [--endpoint URL [--api-key K] [--prefix P]]")
 		os.Exit(2)
 	}
-	options := ai.OptionsFor(args[0])
+
+	agent := fs.Arg(0)
+	var source ai.ModelSource = ai.LocalSource{}
+	if *endpoint != "" {
+		source = ai.APISource{Endpoint: *endpoint, APIKey: *apiKey, ModelPrefix: *prefix}
+	}
+	options, err := source.Options(context.Background(), ai.Agent{Name: agent})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println("models:")
 	for _, model := range options.Models {
 		fmt.Printf("  %s\n", model)

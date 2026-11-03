@@ -109,9 +109,27 @@ Unsupported flags are omitted. The module never invents an option.
 
 ## Model sources
 
-`OptionsFor(agent)` reads local files and never fails the caller. A missing or malformed catalog returns empty options.
+The picker reads options through `ModelSource`, so the origin stays replaceable.
 
-| Agent | Source |
+```go
+// ModelSource answers where the picker reads models and efforts.
+type ModelSource interface {
+	Options(ctx context.Context, agent Agent) (Options, error)
+}
+```
+
+| Source | Origin |
+|---|---|
+| `LocalSource{}` | The agent's catalog on disk (the table below) |
+| `APISource{Endpoint: ...}` | `GET {endpoint}/models` on an OpenAI-compatible API |
+| `StaticSource{Data: ...}` | One fixed list from config or tests |
+| `CompositeSource{Sources: ...}` | The first source with a non-empty answer |
+| `CachedSource{Source: ..., TTL: ...}` | Memoizes another source; a failed refresh keeps the old value |
+| `Gateway{Default: ..., ByAgent: ...}` | Routes by agent name, else the default source |
+
+`LocalSource` never fails the caller. A missing or malformed catalog returns empty options.
+
+| Agent | Local file |
 |---|---|
 | `pi` | `~/.pi/agent/models-store.json` |
 | `codex` | `~/.codex/models_cache.json` |
@@ -120,6 +138,25 @@ Unsupported flags are omitted. The module never invents an option.
 | `jcode` | `~/.config/jcode/openai_model_catalog_cache.json`, `~/.jcode/cache/*_models.json` |
 
 The picker should still allow a free-text value, so a stale catalog never blocks a handoff.
+
+```go
+var source ai.ModelSource = ai.Gateway{
+	Default: ai.CachedSource{
+		Source: ai.CompositeSource{Sources: []ai.ModelSource{
+			ai.APISource{Endpoint: "https://api.openai.com/v1", APIKey: key, ModelPrefix: "openai/"},
+			ai.LocalSource{},
+		}},
+		TTL: time.Minute,
+	},
+}
+options, err := source.Options(ctx, agent)
+```
+
+From the CLI, `ai models <agent> --endpoint URL` lists the provider instead of disk:
+
+```sh
+ai models opencode --endpoint https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --prefix openai/
+```
 
 ## Invokers
 
