@@ -1,8 +1,8 @@
-# ai
+# agentbridge
 
 Shared AI agent contract for local-first Go tools.
 
-`ai` answers one question: **how does an application hand work to a local coding agent without knowing that agent's CLI?**
+`agentbridge` answers one question: **how does an application hand work to a local coding agent without knowing that agent's CLI?**
 
 It gives you:
 
@@ -13,22 +13,22 @@ It gives you:
 - process and HTTP invokers;
 - a `mux` presenter for panes, tabs and popups.
 
-Presentation stays in the application. `ai` never draws a TUI.
+Presentation stays in the application. `agentbridge` never draws a TUI.
 
-> Status: `v0.1.0`, experimental. The API is usable but not frozen before `v1.0.0`.
+> Status: `v0.3.0`, experimental. The API is usable but not frozen before `v1.0.0`.
 
 ## Install
 
 Library:
 
 ```bash
-go get github.com/sovengar/ai@v0.1.0
+go get github.com/sovengar/agentbridge@v0.1.0
 ```
 
 CLI:
 
 ```bash
-go install github.com/sovengar/ai/cmd/ai@v0.1.0
+go install github.com/sovengar/agentbridge/cmd/agentbridge@v0.1.0
 ```
 
 ## Versioning
@@ -38,7 +38,7 @@ Releases use semantic tags. `v0.1.0` is the first published tag; the API may cha
 Pin production consumers:
 
 ```bash
-go get github.com/sovengar/ai@v0.1.0
+go get github.com/sovengar/agentbridge@v0.1.0
 ```
 
 Use `@latest` only for experiments.
@@ -47,16 +47,16 @@ Use `@latest` only for experiments.
 
 ```bash
 # Which agents are installed?
-ai agents
+agentbridge agents
 
 # Which models does pi expose locally?
-ai models pi
+agentbridge models pi
 
 # Start an interactive agent with a prompt
-ai exec --harness pi --model free --effort high --prompt "fix the failing test"
+agentbridge exec --harness pi --model free --effort high --prompt "fix the failing test"
 
 # Inspect the headless argv instead of running it
-ai argv --agent pi --model free --effort high -- "fix the failing test"
+agentbridge argv --agent pi --model free --effort high -- "fix the failing test"
 ```
 
 Applications can use the same contract through Go:
@@ -152,10 +152,10 @@ var source ai.ModelSource = ai.Gateway{
 options, err := source.Options(ctx, agent)
 ```
 
-From the CLI, `ai models <agent> --endpoint URL` lists the provider instead of disk:
+From the CLI, `agentbridge models <agent> --endpoint URL` lists the provider instead of disk:
 
 ```sh
-ai models opencode --endpoint https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --prefix openai/
+agentbridge models opencode --endpoint https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --prefix openai/
 ```
 
 ## Invokers
@@ -224,11 +224,11 @@ Backend detection:
 
 ## Handoff config
 
-A consumer can keep one command for every agent. The agent-specific argv is built by `ai exec`.
+A consumer can keep one command for every agent. The agent-specific argv is built by `agentbridge exec`.
 
 ```toml
 [handoff]
-command = "mux --container {{container}} --layout tab --working-dir {{working_dir}} --session-id {{session_id}} -- ai exec --harness {{harness}} --model {{model}} --effort {{effort}} --prompt-file {{prompt_file}}"
+command = "mux --container {{container}} --layout tab --working-dir {{working_dir}} --session-id {{session_id}} -- agentbridge exec --harness {{harness}} --model {{model}} --effort {{effort}} --prompt-file {{prompt_file}}"
 ```
 
 Example for [tsk](https://github.com/Sovengar/tsk):
@@ -243,14 +243,14 @@ A complete example lives in [`examples/tsk-config.toml`](examples/tsk-config.tom
 ## CLI reference
 
 ```text
-ai agents
-ai models <agent>
-ai argv --agent <agent> [--model M] [--effort E] [--cwd DIR] [--] <prompt>
-ai exec --harness <agent> [--model M] [--effort E] [--binary BIN]
+agentbridge agents
+agentbridge models <agent>
+agentbridge argv --agent <agent> [--model M] [--effort E] [--cwd DIR] [--] <prompt>
+agentbridge exec --harness <agent> [--model M] [--effort E] [--binary BIN]
         [--cwd DIR] (--prompt-file FILE | --prompt TEXT) [--dry-run]
 ```
 
-`ai exec` uses `syscall.Exec`, so it preserves the TTY, signals and exit code.
+`agentbridge exec` uses `syscall.Exec`, so it preserves the TTY, signals and exit code.
 
 ## Development
 

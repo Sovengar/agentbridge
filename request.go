@@ -1,9 +1,9 @@
-// Package ai defines the shared AI request contract and the capability table
+// Package agentbridge defines the shared AI request contract and the capability table
 // that turns it into argv. It separates four concerns: which agents exist
 // (catalog), how an agent is invoked (invoke), which models/efforts it offers
 // (models), and what the caller wants (request). Presentation (overlay, pane,
 // detached process, direct API) stays in the caller.
-package ai
+package agentbridge
 
 // Agent is one selectable AI harness: a display name and the executable that
 // runs it.

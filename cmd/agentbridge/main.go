@@ -1,4 +1,4 @@
-// Command ai inspects the shared AI catalog and runs an agent interactively.
+// Command agentbridge inspects the shared AI catalog and runs an agent interactively.
 package main
 
 import (
@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/sovengar/ai"
+	"github.com/sovengar/agentbridge"
 )
 
 func main() {
@@ -30,32 +30,32 @@ func main() {
 	case "-h", "--help", "help":
 		usage()
 	default:
-		fmt.Fprintf(os.Stderr, "ai: unknown command %q\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "agentbridge: unknown command %q\n", os.Args[1])
 		usage()
 		os.Exit(2)
 	}
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `ai - shared AI agent catalog, argv builders and executor
+	fmt.Fprint(os.Stderr, `agentbridge - shared AI agent catalog, argv builders and executor
 
 Usage:
-  ai agents
-  ai models <agent> [--endpoint URL [--api-key K] [--prefix P]]
-  ai argv --agent <agent> [--model M] [--effort E] [--cwd DIR] [--] <prompt>
-  ai exec --harness <agent> [--model M] [--effort E] [--binary BIN]
+  agentbridge agents
+  agentbridge models <agent> [--endpoint URL [--api-key K] [--prefix P]]
+  agentbridge argv --agent <agent> [--model M] [--effort E] [--cwd DIR] [--] <prompt>
+  agentbridge exec --harness <agent> [--model M] [--effort E] [--binary BIN]
           [--cwd DIR] (--prompt-file FILE | --prompt TEXT) [--dry-run]
 
 Examples:
-  ai agents
-  ai models pi
-  ai argv --agent pi --model free --effort high -- "fix the test"
-  ai exec --harness pi --model free --effort high --prompt-file /tmp/p
+  agentbridge agents
+  agentbridge models pi
+  agentbridge argv --agent pi --model free --effort high -- "fix the test"
+  agentbridge exec --harness pi --model free --effort high --prompt-file /tmp/p
 `)
 }
 
 func cmdAgents() {
-	for _, agent := range ai.Detect(nil, exec.LookPath) {
+	for _, agent := range agentbridge.Detect(nil, exec.LookPath) {
 		fmt.Printf("%s\t%s\n", agent.Name, agent.Binary)
 	}
 }
@@ -67,18 +67,18 @@ func cmdModels(args []string) {
 	prefix := fs.String("prefix", "", "prepended to every model listed by --endpoint")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: ai models <agent> [--endpoint URL [--api-key K] [--prefix P]]")
+		fmt.Fprintln(os.Stderr, "usage: agentbridge models <agent> [--endpoint URL [--api-key K] [--prefix P]]")
 		os.Exit(2)
 	}
 
 	agent := fs.Arg(0)
-	var source ai.ModelSource = ai.LocalSource{}
+	var source agentbridge.ModelSource = agentbridge.LocalSource{}
 	if *endpoint != "" {
-		source = ai.APISource{Endpoint: *endpoint, APIKey: *apiKey, ModelPrefix: *prefix}
+		source = agentbridge.APISource{Endpoint: *endpoint, APIKey: *apiKey, ModelPrefix: *prefix}
 	}
-	options, err := source.Options(context.Background(), ai.Agent{Name: agent})
+	options, err := source.Options(context.Background(), agentbridge.Agent{Name: agent})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("models:")
@@ -99,18 +99,18 @@ func cmdArgv(args []string) {
 	cwd := fs.String("cwd", "", "working directory")
 	_ = fs.Parse(args)
 	if *agent == "" {
-		fmt.Fprintln(os.Stderr, "usage: ai argv --agent <agent> [--model M] [--effort E] [--cwd DIR] -- <prompt>")
+		fmt.Fprintln(os.Stderr, "usage: agentbridge argv --agent <agent> [--model M] [--effort E] [--cwd DIR] -- <prompt>")
 		os.Exit(2)
 	}
-	argv, err := ai.HeadlessArgs(ai.Request{
-		Agent:  ai.Agent{Name: *agent, Binary: *agent},
+	argv, err := agentbridge.HeadlessArgs(agentbridge.Request{
+		Agent:  agentbridge.Agent{Name: *agent, Binary: *agent},
 		Model:  *model,
 		Effort: *effort,
 		Prompt: joinArgs(fs.Args()),
 		Cwd:    *cwd,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 		os.Exit(1)
 	}
 	out, _ := json.MarshalIndent(argv, "", "  ")
@@ -130,20 +130,20 @@ func cmdExec(args []string) {
 	_ = fs.Parse(args)
 
 	if *harness == "" {
-		fmt.Fprintln(os.Stderr, "usage: ai exec --harness <agent> [--model M] [--effort E] [--binary BIN] [--cwd DIR] (--prompt-file FILE | --prompt TEXT)")
+		fmt.Fprintln(os.Stderr, "usage: agentbridge exec --harness <agent> [--model M] [--effort E] [--binary BIN] [--cwd DIR] (--prompt-file FILE | --prompt TEXT)")
 		os.Exit(2)
 	}
 	text, err := readPrompt(*promptFile, *prompt)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 		os.Exit(2)
 	}
 	bin := *binary
 	if bin == "" {
 		bin = *harness
 	}
-	argv := ai.InteractiveArgs(ai.Request{
-		Agent:  ai.Agent{Name: *harness, Binary: bin},
+	argv := agentbridge.InteractiveArgs(agentbridge.Request{
+		Agent:  agentbridge.Agent{Name: *harness, Binary: bin},
 		Model:  *model,
 		Effort: *effort,
 		Prompt: text,
@@ -156,17 +156,17 @@ func cmdExec(args []string) {
 	}
 	if *cwd != "" {
 		if err := os.Chdir(*cwd); err != nil {
-			fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+			fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 			os.Exit(1)
 		}
 	}
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 		os.Exit(1)
 	}
 	if err := syscall.Exec(path, argv, os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "ai: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agentbridge: %v\n", err)
 		os.Exit(1)
 	}
 }
